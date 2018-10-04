@@ -43,6 +43,8 @@ async def get_version_status(request):
     version = request.match_info['version']
     platform = request.match_info['platform']
     actual_versions = request.app['versions']
+    if platform not in actual_versions:
+        return web.Response(status=404)
     if version not in actual_versions[platform]:
         status = {
             'status': STATUS_UPDATE_REQUIRED,
@@ -54,7 +56,7 @@ async def get_version_status(request):
     return web.json_response(status)
 
 
-@routes.post('/v1/check_updates')
+@routes.post('/v1/check_assets_updates')
 async def check_assests_updates(request):
     """
     Checks assets versions and returns assets IDs that needds updates
