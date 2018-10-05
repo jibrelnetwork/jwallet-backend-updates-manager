@@ -1,5 +1,5 @@
 # jwallet-backend-updates-manager
-jWallet backend app for mobile  apps updates management
+jWallet backend app for mobile apps updates management
 
 ## Prerequisites
 Ubuntu 16.04, Python3.7
