@@ -71,7 +71,7 @@ async def check_assests_updates(request):
     return web.json_response(result)
 
 
-def make_app():
+async def make_app():
     """
     Create and initialize the application instance.
     """
