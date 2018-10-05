@@ -57,24 +57,28 @@ def assets_repo():
     shutil.rmtree(repo_path)
 
 
-async def test_get_updates_blank(aiohttp_client, loop, assets_repo):
+async def _mkapp(aiohttp_client):
+    cli = await aiohttp_client(await make_app())
+    return cli
+
+
+@pytest.fixture()
+def cli(aiohttp_client, loop, assets_repo):
     with mock.patch('jwallet_updates.app.settings') as m:
         m.ASSETS_REPO_PATH = repo_path
         m.ACTUAL_VERSIONS_FILE = '/tmp/jwallet_updates_test_versions.json'
         m.ASSETS_IDS_FILE = repo_path + '/assets_index.json'
-        cli = await aiohttp_client(make_app())
+        yield loop.run_until_complete(_mkapp(aiohttp_client))
+
+
+async def test_get_updates_blank(cli, assets_repo):
     res = await cli.post('/v1/check_assets_updates', json=[{'id': 'no_such_file.txt', 'version': 'abc'}])
     assert res.status == 200
     assert await res.json() == []
 
 
-async def test_get_updates(aiohttp_client, loop, assets_repo):
-    with mock.patch('jwallet_updates.app.settings') as m:
-        m.ASSETS_REPO_PATH = repo_path
-        m.ACTUAL_VERSIONS_FILE = '/tmp/jwallet_updates_test_versions.json'
-        m.ASSETS_IDS_FILE = repo_path + '/assets_index.json'
-        cli = await aiohttp_client(make_app())
-        repo_items = list(assets_repo.head.commit.tree.traverse())
+async def test_get_updates(cli, assets_repo):
+    repo_items = list(assets_repo.head.commit.tree.traverse())
     res = await cli.post('/v1/check_assets_updates',
                          json=[
                             {'id': 'F4', 'version': repo_items[-1].hexsha[:6]},
@@ -86,12 +90,7 @@ async def test_get_updates(aiohttp_client, loop, assets_repo):
     assert await res.json() == ['F3', 'F1']
 
 
-async def test_get_updates_change_files(aiohttp_client, loop, assets_repo):
-    with mock.patch('jwallet_updates.app.settings') as m:
-        m.ASSETS_REPO_PATH = repo_path
-        m.ACTUAL_VERSIONS_FILE = '/tmp/jwallet_updates_test_versions.json'
-        m.ASSETS_IDS_FILE = repo_path + '/assets_index.json'
-        cli = await aiohttp_client(make_app())
+async def test_get_updates_change_files(cli, assets_repo, loop, aiohttp_client):
     repo_items = list(assets_repo.head.commit.tree.traverse())
 
     current_versions = [
@@ -113,44 +112,39 @@ async def test_get_updates_change_files(aiohttp_client, loop, assets_repo):
     assets_repo.git.add('file1.txt')
     assets_repo.index.commit('chage file1.txt')
 
-    with mock.patch('jwallet_updates.app.settings') as m:
-        m.ASSETS_REPO_PATH = repo_path
-        m.ACTUAL_VERSIONS_FILE = '/tmp/jwallet_updates_test_versions.json'
-        m.ASSETS_IDS_FILE = repo_path + '/assets_index.json'
-        cli = await aiohttp_client(make_app())
+    cli = await _mkapp(aiohttp_client)
 
     res = await cli.post('/v1/check_assets_updates', json=current_versions)
     assert res.status == 200
     assert await res.json() == ['F1']
 
 
-async def test_get_version_status_not_ok(aiohttp_client, loop, assets_repo):
-    with mock.patch('jwallet_updates.app.settings') as m:
-        m.ASSETS_REPO_PATH = repo_path
-        m.ACTUAL_VERSIONS_FILE = '/tmp/jwallet_updates_test_versions.json'
-        m.ASSETS_IDS_FILE = repo_path + '/assets_index.json'
-        cli = await aiohttp_client(make_app())
+async def test_get_version_status_not_ok(cli, assets_repo):
     res = await cli.get('/v1/ios/0.1/status')
     assert res.status == 200
     assert await res.json() == {'status': 'UPDATE_REQUIRED'}
 
 
-async def test_get_version_status_ok(aiohttp_client, loop, assets_repo):
-    with mock.patch('jwallet_updates.app.settings') as m:
-        m.ASSETS_REPO_PATH = repo_path
-        m.ACTUAL_VERSIONS_FILE = '/tmp/jwallet_updates_test_versions.json'
-        m.ASSETS_IDS_FILE = repo_path + '/assets_index.json'
-        cli = await aiohttp_client(make_app())
+async def test_get_version_status_ok(cli, assets_repo):
     res = await cli.get('/v1/android/33/status')
     assert res.status == 200
     assert await res.json() == {'status': 'UP_TO_DATE'}
 
 
-async def test_get_version_status_404(aiohttp_client, loop, assets_repo):
-    with mock.patch('jwallet_updates.app.settings') as m:
-        m.ASSETS_REPO_PATH = repo_path
-        m.ACTUAL_VERSIONS_FILE = '/tmp/jwallet_updates_test_versions.json'
-        m.ASSETS_IDS_FILE = repo_path + '/assets_index.json'
-        cli = await aiohttp_client(make_app())
+async def test_get_version_status_404(cli, assets_repo):
     res = await cli.get('/v1/windows/33/status')
     assert res.status == 404
+
+
+async def test_get_asset_ok(cli, assets_repo):
+    res = await cli.get('/v1/assets/F1')
+    repo_items = list(assets_repo.head.commit.tree.traverse())
+    assert res.status == 200
+    assert res.content_type == 'text/plain'
+    assert res.headers['X-ASSET-VERSION'] == repo_items[2].hexsha[:6]
+
+
+async def test_get_asset_404(cli):
+    res = await cli.get('/v1/assets/ZERO')
+    assert res.status == 404
+

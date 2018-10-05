@@ -1,5 +1,6 @@
 import os
 import json
+import mimetypes
 
 from git import Repo
 import asyncio
@@ -27,12 +28,27 @@ def make_assets_index():
     for id_, path in ids_map.items():
         if path not in repo_state:
             raise ValueError('Asset path {} does not exist!')
-        index[id_] = repo_state[path]
+        index[id_] = {'version': repo_state[path], 'path': path}
     return index
 
 
 routes = web.RouteTableDef()
 # routes.static('/v1/assets/', settings.ASSETS_REPO_PATH)
+
+
+@routes.get('/v1/assets/{asset_id}')
+async def get_asset(request):
+    asset_id = request.match_info['asset_id']
+    assets_index = request.app['assets_index']
+    asset_info = assets_index.get(asset_id)
+    if asset_info is None:
+        return web.Response(status=404)
+    asset_abs_path = os.path.join(settings.ASSETS_REPO_PATH, asset_info['path'])
+    resp = web.Response(body=open(asset_abs_path, 'rb').read(), headers={'X-ASSET-VERSION': asset_info['version']})
+    mime_type = mimetypes.guess_type(asset_abs_path)
+    if mime_type:
+        resp.content_type = mime_type[0]
+    return resp
 
 
 @routes.get('/v1/{platform}/{version}/status')
@@ -65,9 +81,10 @@ async def check_assests_updates(request):
     assets_index = request.app['assets_index']
     result = []
     for asset in app_assets:
-        actual_version = assets_index.get(asset['id'])
-        if actual_version is not None and actual_version != asset['version']:
-            result.append(asset['id'])
+        asset_info = assets_index.get(asset['id'])
+        if asset_info is not None:
+            if asset_info['version'] != asset['version']:
+                result.append(asset['id'])
     return web.json_response(result)
 
 

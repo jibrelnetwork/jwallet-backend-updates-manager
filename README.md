@@ -17,10 +17,7 @@ pip install -r requirements.txt
 ```
 
 ## Configuration
-Environment vars required:
-```
-JWALLET_ASSETS_REPO_PATH - absolute filesystem path to git repository with jWallet updates
-```
+No configs needed
 
 ## Running tests
 ```
@@ -29,20 +26,66 @@ pytest jwallet_updates/tests.py
 ```
 
 ## Running app
+
+development:
 ```
 python jwallet_updates/app.py
+```
+production:
+```
+gunicorn --bind localhost:8000 jwallet_updates.app:make_app  --worker-class aiohttp.worker.GunicornWebWorker
 ```
 
 ## API
 
-Get update status for particular version:
+Get update status for particular mobile app version:
 ```
-GET /v1/<platform>/<locale>/<version>/status
+GET /v1/<platform>/<version>/status
 
 200 OK
 {
-    "status": UP_TO_DATE|UPDATE_AVAILABLE|UPDATE_REQUIRED,
-    "updateDescription": "some text",
+    "status": UP_TO_DATE|UPDATE_REQUIRED,
 }
 ```
 
+Check assets updates available:
+```
+POST /v1/check_assets_updates
+[
+    {"id": "ICON_1", "version": "123abc"},
+    {"id": "SERVERS": "version": "122caa"},
+    {"id": "ICON_2": "version": "aabb22"}
+]
+
+200 OK
+[
+    "SERVERS",
+    "ICON_2",
+]
+```
+In this example ICON_1 is up-to-date, SERVERS and ICON_2 has updates
+
+Get asset file (with its version):
+```
+GET /v1/assets/<asset_id>
+
+200 OK
+Content-Type: image/png
+X-ASSET-VERSION: 119ac6
+...file contents...
+```
+actually it is easy to calculate asset version at client side: `sha1('blob {file_size}\0{file_content}')`
+
+
+## Assets management
+
+1. Add or change asset files at assets repo (`jibrelnetwork/jwallet-assets`)
+2. Update assets index file (`jibrelnetwork/jwallet-assets:assets_index.json`)
+3. push assets changes at `master` branch
+4. update submodule `assets` at (`jibrelnetwork/jwallet-backend-updates-manager`) repo
+
+
+## Versions management
+
+1. Update `jibrelnetwork/jwallet-backend-updates-manager:actual_versions.json` file - it should contain actual versions (no update required) of mobile apps for each platform
+2. commit and push
