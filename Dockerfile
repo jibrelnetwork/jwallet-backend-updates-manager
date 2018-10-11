@@ -1,13 +1,20 @@
-FROM python:3.7
+FROM python:3.7-alpine
 
-RUN mkdir -p /app
+RUN addgroup -S -g 1000 app \
+ && adduser -S -u 1000 -G app -s /bin/sh -D app \
+ && mkdir /app \
+ && chown -R app:app /app \
+ && apk add --no-cache \
+        git \
+ && rm -rf /var/cache/apk/*
 WORKDIR /app
 
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install gunicorn
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir gunicorn
 
-COPY . /app
+COPY . .
 RUN pip install --no-cache-dir --editable .
 
-ENTRYPOINT ["/app/run.sh"]
+USER app
+CMD ["gunicorn", "-c", "gunicorn-conf.py", "jwallet_updates.app:make_app"]
