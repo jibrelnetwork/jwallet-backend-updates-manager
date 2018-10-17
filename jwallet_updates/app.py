@@ -1,8 +1,8 @@
 import os
+import hashlib
 import json
 import mimetypes
 
-from git import Repo
 import asyncio
 from aiohttp import web
 
@@ -14,10 +14,28 @@ STATUS_UP_TO_DATE = 'UP_TO_DATE'
 
 
 def get_actual_assets():
-    repo = Repo(settings.ASSETS_REPO_PATH)
     assets = {}
-    for obj in repo.heads.master.commit.tree.traverse():
-        assets[obj.path] = obj.hexsha[:6]
+
+    for root, dirs, files in os.walk(settings.ASSETS_REPO_PATH, topdown=False):
+        rel_dir = os.path.relpath(root, settings.ASSETS_REPO_PATH)
+
+        for file in files:
+            digest_file = hashlib.sha1()
+
+            rel_path = os.path.join(rel_dir, file).replace('./', '')
+            full_path = os.path.join(root, file)
+
+            if os.path.isfile(full_path):
+                with open(full_path, 'rb') as f_obj:
+                    digest_file.update(b'blob ' + str(os.path.getsize(full_path)).encode() + b'\0')
+                    while True:
+                        buf = f_obj.read(64 * 1024)
+                        if not buf:
+                            break
+                        digest_file.update(buf)
+
+            assets[rel_path] = digest_file.hexdigest()[:6]
+
     return assets
 
 
