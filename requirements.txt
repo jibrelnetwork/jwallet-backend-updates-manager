@@ -1,2 +1,4 @@
 aiohttp==3.4.4
 GitPython==2.1.11
+semver==2.8.1
+

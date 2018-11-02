@@ -5,6 +5,7 @@ import mimetypes
 from git import Repo
 import asyncio
 from aiohttp import web
+import semver
 
 from jwallet_updates import settings
 # from aiohttp_swagger import setup_swagger
@@ -32,6 +33,17 @@ def make_assets_index():
     return index
 
 
+def load_versions_info():
+    data = json.load(open(settings.ACTUAL_VERSIONS_FILE, 'rb'))
+    processed = {}
+    for platform, versions_info in data.items():
+        processed[platform] = {
+            'minimal_actual_version': semver.VersionInfo.parse(versions_info['minimal_actual_version']),
+            'force_update': [semver.VersionInfo.parse(v) for v in versions_info['force_update']]
+        }
+    return processed
+
+
 routes = web.RouteTableDef()
 # routes.static('/v1/assets/', settings.ASSETS_REPO_PATH)
 
@@ -57,11 +69,19 @@ async def get_version_status(request):
     Checks moblie app version status: up to date, update available or update required
     """
     version = request.match_info['version']
+    try:
+        version = semver.VersionInfo.parse(version)
+    except ValueError as e:
+        return web.Response(body=str(e), status=400)
     platform = request.match_info['platform']
-    actual_versions = request.app['versions']
-    if platform not in actual_versions:
+    versions_info = request.app['versions']
+    if platform not in versions_info:
         return web.Response(status=404)
-    if version not in actual_versions[platform]:
+    if version < versions_info[platform]['minimal_actual_version']:
+        status = {
+            'status': STATUS_UPDATE_REQUIRED,
+        }
+    elif version in versions_info[platform]['force_update']:
         status = {
             'status': STATUS_UPDATE_REQUIRED,
         }
@@ -93,7 +113,7 @@ async def make_app():
     Create and initialize the application instance.
     """
     app = web.Application()
-    app['versions'] = json.load(open(settings.ACTUAL_VERSIONS_FILE, 'rb'))
+    app['versions'] = load_versions_info()
     app['assets_index'] = make_assets_index()
     app.add_routes(routes)
     return app
