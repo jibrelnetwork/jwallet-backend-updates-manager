@@ -9,6 +9,7 @@ import semver
 
 from jwallet_updates import settings
 # from aiohttp_swagger import setup_swagger
+from .healthcheck import healthcheck
 
 STATUS_UPDATE_REQUIRED = 'UPDATE_REQUIRED'
 STATUS_UP_TO_DATE = 'UP_TO_DATE'
@@ -134,6 +135,7 @@ async def make_app():
     app['versions'] = load_versions_info()
     app['assets_index'] = make_assets_index()
     app.add_routes(routes)
+    app.router.add_get('/healthcheck', healthcheck)
     return app
 
 
