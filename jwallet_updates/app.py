@@ -1,10 +1,11 @@
 import os
+import hashlib
 import json
 import mimetypes
 
-from git import Repo
 import asyncio
 from aiohttp import web
+import semver
 
 from jwallet_updates import settings
 # from aiohttp_swagger import setup_swagger
@@ -15,10 +16,28 @@ STATUS_UP_TO_DATE = 'UP_TO_DATE'
 
 
 def get_actual_assets():
-    repo = Repo(settings.ASSETS_REPO_PATH)
     assets = {}
-    for obj in repo.heads.master.commit.tree.traverse():
-        assets[obj.path] = obj.hexsha[:6]
+
+    for root, dirs, files in os.walk(settings.ASSETS_REPO_PATH, topdown=False):
+        rel_dir = os.path.relpath(root, settings.ASSETS_REPO_PATH)
+
+        for file in files:
+            digest_file = hashlib.sha1()
+
+            rel_path = os.path.join(rel_dir, file).replace('./', '')
+            full_path = os.path.join(root, file)
+
+            if os.path.isfile(full_path):
+                with open(full_path, 'rb') as f_obj:
+                    digest_file.update(b'blob ' + str(os.path.getsize(full_path)).encode() + b'\0')
+                    while True:
+                        buf = f_obj.read(64 * 1024)
+                        if not buf:
+                            break
+                        digest_file.update(buf)
+
+            assets[rel_path] = digest_file.hexdigest()[:6]
+
     return assets
 
 
@@ -31,6 +50,17 @@ def make_assets_index():
             raise ValueError('Asset path {} does not exist!')
         index[id_] = {'version': repo_state[path], 'path': path}
     return index
+
+
+def load_versions_info():
+    data = json.load(open(settings.ACTUAL_VERSIONS_FILE, 'rb'))
+    processed = {}
+    for platform, versions_info in data.items():
+        processed[platform] = {
+            'minimal_actual_version': semver.VersionInfo.parse(versions_info['minimal_actual_version']),
+            'force_update': [semver.VersionInfo.parse(v) for v in versions_info['force_update']]
+        }
+    return processed
 
 
 routes = web.RouteTableDef()
@@ -58,11 +88,19 @@ async def get_version_status(request):
     Checks moblie app version status: up to date, update available or update required
     """
     version = request.match_info['version']
+    try:
+        version = semver.VersionInfo.parse(version)
+    except ValueError as e:
+        return web.Response(body=str(e), status=400)
     platform = request.match_info['platform']
-    actual_versions = request.app['versions']
-    if platform not in actual_versions:
+    versions_info = request.app['versions']
+    if platform not in versions_info:
         return web.Response(status=404)
-    if version not in actual_versions[platform]:
+    if version < versions_info[platform]['minimal_actual_version']:
+        status = {
+            'status': STATUS_UPDATE_REQUIRED,
+        }
+    elif version in versions_info[platform]['force_update']:
         status = {
             'status': STATUS_UPDATE_REQUIRED,
         }
@@ -94,7 +132,7 @@ async def make_app():
     Create and initialize the application instance.
     """
     app = web.Application()
-    app['versions'] = json.load(open(settings.ACTUAL_VERSIONS_FILE, 'rb'))
+    app['versions'] = load_versions_info()
     app['assets_index'] = make_assets_index()
     app.add_routes(routes)
     app.router.add_get('/healthcheck', healthcheck)

@@ -1,2 +1,2 @@
 aiohttp >= 3.4, < 3.5
-gitpython >= 2.1, < 2.2
+semver >= 2.8, < 2.9
