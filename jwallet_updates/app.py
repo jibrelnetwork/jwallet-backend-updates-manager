@@ -46,9 +46,9 @@ def make_assets_index():
     ids_map = json.load(open(settings.ASSETS_IDS_FILE, 'rb'))
     index = {}
     for id_, path in ids_map.items():
-        if path not in repo_state:
+        if path['assets'] not in repo_state:
             raise ValueError('Asset path {} does not exist!')
-        index[id_] = {'version': repo_state[path], 'path': path}
+        index[id_] = {'version': repo_state[path['assets']], 'path': path['assets']}
     return index
 
 
