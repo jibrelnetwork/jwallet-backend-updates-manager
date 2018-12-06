@@ -38,17 +38,19 @@ gunicorn --bind localhost:8000 jwallet_updates.app:make_app  --worker-class aioh
 
 ## API
 
-Get update status for particular mobile app version:
+###Get update status for particular mobile app version:
+
 ```
 GET /v1/<platform>/<version>/status
 
 200 OK
 {
-    "status": UP_TO_DATE|UPDATE_REQUIRED,
+    "status": "UP_TO_DATE"|"UPDATE_REQUIRED"
 }
 ```
 
-Check assets updates available:
+###Check assets updates available:
+
 ```
 POST /v1/check_assets_updates
 [
@@ -65,7 +67,29 @@ POST /v1/check_assets_updates
 ```
 In this example ICON_1 is up-to-date, SERVERS and ICON_2 has updates
 
-Get asset file (with its version):
+For example. Check updates availability for mainnet and ropsten assets.json
+```
+POST /v1/check_assets_updates
+[
+    {
+        "id": "mainnet",
+        "version": "123abc"
+    },
+    {
+        "id": "ropsten",
+        "version": "122caa"
+    }
+]
+
+200 OK
+[
+    "mainnet",
+    "ropsten"
+]
+```
+
+#### Get asset file (with its version):
+
 ```
 GET /v1/assets/<asset_id>
 
@@ -75,6 +99,107 @@ X-ASSET-VERSION: 119ac6
 ...file contents...
 ```
 actually it is easy to calculate asset version at client side: `sha1('blob {file_size}\0{file_content}')`
+
+For example. Get latest version of mainnet assets.json
+```
+GET /v1/assets/mainnet
+
+200 OK
+X-ASSET-VERSION: 324b1c
+Content-Type: application/json
+[
+  {
+    "name": "Jibrel Network Token",
+    "symbol": "JNT",
+    "blockchainParams": {
+      "type": "erc-20",
+      "features": [
+        "mintable"
+      ],
+      "address": "0xa5fd1a791c4dfcaacc963d4f73c6ae5824149ea7",
+      "decimals": 18,
+      "staticGasAmount": 85000,
+      "deploymentBlockNumber": 4736154
+    },
+    "display": {
+      "isDefaultForcedDisplay": true,
+      "digitalAssetsListPriority": 980
+    },
+    "priceFeed": {
+      "currencyID": 2498,
+      "currencyIDType": "coinmarketcap"
+    },
+    "assetPage": {
+      "description": "Jibrel provides currencies, equities, commodities and other financial assets as standard ERC-20 tokens on the Ethereum blockchain",
+      "urls": [
+        {
+          "type": "site",
+          "url": "https://jibrel.network/"
+        },
+        {
+          "type": "binance",
+          "url": "https://info.binance.com/en/currencies/jibrel-network-token"
+        },
+        {
+          "type": "coinmarketcap",
+          "url": "https://coinmarketcap.com/currencies/jibrel-network"
+        }
+      ]
+    }
+  }
+]
+```
+
+Get latest version of ropsten assets.json
+
+```
+GET /v1/assets/ropsten
+
+200 OK
+X-ASSET-VERSION: 80914e
+Content-Type: application/json
+[
+  {
+    "name": "Jibrel Network Token",
+    "symbol": "JNT",
+    "blockchainParams": {
+      "type": "erc-20",
+      "features": [
+        "mintable"
+      ],
+      "address": "0xa5fd1a791c4dfcaacc963d4f73c6ae5824149ea7",
+      "decimals": 18,
+      "staticGasAmount": 85000,
+      "deploymentBlockNumber": 4736154
+    },
+    "display": {
+      "isDefaultForcedDisplay": true,
+      "digitalAssetsListPriority": 980
+    },
+    "priceFeed": {
+      "currencyID": 2498,
+      "currencyIDType": "coinmarketcap"
+    },
+    "assetPage": {
+      "description": "Jibrel provides currencies, equities, commodities and other financial assets as standard ERC-20 tokens on the Ethereum blockchain",
+      "urls": [
+        {
+          "type": "site",
+          "url": "https://jibrel.network/"
+        },
+        {
+          "type": "binance",
+          "url": "https://info.binance.com/en/currencies/jibrel-network-token"
+        },
+        {
+          "type": "coinmarketcap",
+          "url": "https://coinmarketcap.com/currencies/jibrel-network"
+        }
+      ]
+    }
+  }
+]
+```
 
 
 ## Assets management
