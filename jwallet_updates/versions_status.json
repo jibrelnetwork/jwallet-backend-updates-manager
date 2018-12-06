@@ -1,0 +1,10 @@
+{
+    "ios": {
+        "minimal_actual_version": "0.0.1",
+        "force_update": []
+    },
+    "android": {
+        "minimal_actual_version": "0.2.0",
+        "force_update": ["0.1.0"]
+    }
+}
