@@ -9,10 +9,21 @@ import semver
 
 from jwallet_updates import settings
 # from aiohttp_swagger import setup_swagger
-from .healthcheck import healthcheck
+from jwallet_updates.healthcheck import healthcheck
 
 STATUS_UPDATE_REQUIRED = 'UPDATE_REQUIRED'
 STATUS_UP_TO_DATE = 'UP_TO_DATE'
+
+
+def json_response(view):
+    async def _wrapper(request):
+        status, data = await view(request)
+        return web.json_response(
+            status=status,
+            data=data
+        )
+
+    return _wrapper
 
 
 def get_actual_assets():
@@ -58,7 +69,11 @@ def load_versions_info():
     for platform, versions_info in data.items():
         processed[platform] = {
             'minimal_actual_version': semver.VersionInfo.parse(versions_info['minimal_actual_version']),
-            'force_update': [semver.VersionInfo.parse(v) for v in versions_info['force_update']]
+            'force_update': [semver.VersionInfo.parse(v) for v in versions_info['force_update']],
+            'latest_version': semver.VersionInfo.parse(versions_info['latest_version']) \
+                if versions_info.get('latest_version') else None,
+            'force_off': [semver.VersionInfo.parse(v) for v in versions_info['force_off']] \
+                if versions_info.get('force_off') else []
         }
     return processed
 
@@ -83,7 +98,7 @@ async def get_asset(request):
 
 
 @routes.get('/v1/{platform}/{version}/status')
-async def get_version_status(request):
+async def get_version_status_v1(request):
     """
     Checks moblie app version status: up to date, update available or update required
     """
@@ -93,6 +108,7 @@ async def get_version_status(request):
     except ValueError as e:
         return web.Response(body=str(e), status=400)
     platform = request.match_info['platform']
+
     versions_info = request.app['versions']
     if platform not in versions_info:
         return web.Response(status=404)
@@ -109,6 +125,78 @@ async def get_version_status(request):
             'status': STATUS_UP_TO_DATE,
         }
     return web.json_response(status)
+
+
+@routes.get('/v2/{platform}/{version}/status')
+@json_response
+async def get_version_status_v2(request):
+    """
+    Checks moblie app version status: up to date, update available or update required
+    """
+    version = request.match_info['version']
+
+    try:
+        version = semver.VersionInfo.parse(version)
+    except ValueError as e:
+        return 400, {
+            'success': False,
+            'errors': [
+                {
+                    'code': 'ValidationError',
+                    'message': 'Bad semver value'
+                }
+            ]
+        }
+
+    platform = request.match_info['platform']
+
+    if platform == 'android':
+        return 400, {
+            'success': False,
+            'errors': [
+                {
+                    'code': 'ValidationError',
+                    'message': 'This platform is not supported'
+                }
+            ]
+        }
+
+    versions_info = request.app['versions']
+    if platform not in versions_info:
+        return web.Response(status=404)
+    if version < versions_info[platform]['minimal_actual_version'] and \
+            version < versions_info[platform]['latest_version']:
+        status = {
+            'status': STATUS_UPDATE_REQUIRED,
+            'update_available': True
+        }
+    elif version < versions_info[platform]['minimal_actual_version'] and \
+            version >= versions_info[platform]['latest_version']:
+        status = {
+            'status': STATUS_UPDATE_REQUIRED,
+            'update_available': False
+        }
+    elif version in versions_info[platform]['force_update']:
+        status = {
+            'status': STATUS_UPDATE_REQUIRED,
+            'update_available': True
+        }
+    elif version in versions_info[platform]['force_off']:
+        status = {
+            'status': STATUS_UPDATE_REQUIRED,
+            'update_available': False
+        }
+    elif version < versions_info[platform]['latest_version']:
+        status = {
+            'status': STATUS_UP_TO_DATE,
+            'update_available': True
+        }
+    else:
+        status = {
+            'status': STATUS_UP_TO_DATE,
+            'update_available': False
+        }
+    return 200, status
 
 
 @routes.post('/v1/check_assets_updates')

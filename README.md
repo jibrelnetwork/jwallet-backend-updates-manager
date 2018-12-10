@@ -38,7 +38,10 @@ gunicorn --bind localhost:8000 jwallet_updates.app:make_app  --worker-class aioh
 
 ## API
 
-###Get update status for particular mobile app version:
+###Get update status for particular mobile app version (v1):
+
+platform - android | ios
+version - semver value
 
 ```
 GET /v1/<platform>/<version>/status
@@ -46,6 +49,28 @@ GET /v1/<platform>/<version>/status
 200 OK
 {
     "status": "UP_TO_DATE"|"UPDATE_REQUIRED"
+}
+```
+
+###Get update status for particular mobile app version (v2):
+
+platform - android | ios
+version - semver value
+
+```
+GET /v2/<platform>/<version>/status
+
+200 OK
+{
+    "success": true,
+    "status": "UP_TO_DATE"|"UPDATE_REQUIRED",
+    "update_available": true | false
+}
+
+400 Bad Request
+{
+    "success": false,
+    "errors": [{"code": "ValidationError", "message": "This platform is not supported"}]
 }
 ```
 
