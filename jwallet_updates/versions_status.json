@@ -6,7 +6,6 @@
         "force_off": []
     },
     "android": {
-        "minimal_actual_version": "0.2.0",
-        "force_update": ["0.1.20","0.1.21"]
+        "minimal_actual_version": "2.1.0"
     }
 }
