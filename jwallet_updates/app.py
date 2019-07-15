@@ -1,18 +1,49 @@
 import os
 import hashlib
 import json
+from json import JSONDecodeError
+import logging
 import mimetypes
 
 import asyncio
 from aiohttp import web
+from marshmallow import ValidationError
 import semver
-
-from jwallet_updates import settings
 # from aiohttp_swagger import setup_swagger
+import sentry_sdk
+
+from jwallet_updates.settings import (
+    RAVEN_DSN,
+    ASSETS_REPO_PATH,
+    ASSETS_IDS_FILE,
+    ACTUAL_VERSIONS_FILE,
+    ANDROID,
+    IOS,
+    PLATFORMS,
+    CONFIG_SECRET,
+)
 from jwallet_updates.healthcheck import healthcheck
+from jwallet_updates.schemas import IOSConfigSchema, AndroidConfigSchema
+from jwallet_updates.middleware import TokenAuthMiddleware
+
+
+sentry_sdk.init(RAVEN_DSN)
+logger = logging.getLogger(__name__)
+lock = asyncio.Lock()
+
 
 STATUS_UPDATE_REQUIRED = 'UPDATE_REQUIRED'
 STATUS_UP_TO_DATE = 'UP_TO_DATE'
+
+
+def serialize(obj):
+    """JSON serializer for objects not serializable by default json code"""
+
+    if isinstance(obj, semver.VersionInfo):
+        serial = str(obj)
+        return serial
+
+    return obj.__dict__
 
 
 def json_response(view):
@@ -20,7 +51,7 @@ def json_response(view):
         status, data = await view(request)
         return web.json_response(
             status=status,
-            data=data
+            text=json.dumps(data, default=serialize)
         )
 
     return _wrapper
@@ -29,8 +60,8 @@ def json_response(view):
 def get_actual_assets():
     assets = {}
 
-    for root, dirs, files in os.walk(settings.ASSETS_REPO_PATH, topdown=False):
-        rel_dir = os.path.relpath(root, settings.ASSETS_REPO_PATH)
+    for root, dirs, files in os.walk(ASSETS_REPO_PATH, topdown=False):
+        rel_dir = os.path.relpath(root, ASSETS_REPO_PATH)
 
         for file in files:
             digest_file = hashlib.sha1()
@@ -54,7 +85,7 @@ def get_actual_assets():
 
 def make_assets_index():
     repo_state = get_actual_assets()
-    ids_map = json.load(open(settings.ASSETS_IDS_FILE, 'rb'))
+    ids_map = json.load(open(ASSETS_IDS_FILE, 'rb'))
     index = {}
     for id_, path in ids_map.items():
         if path['assets'] not in repo_state:
@@ -64,7 +95,7 @@ def make_assets_index():
 
 
 def load_versions_info():
-    data = json.load(open(settings.ACTUAL_VERSIONS_FILE, 'rb'))
+    data = json.load(open(ACTUAL_VERSIONS_FILE, 'rb'))
     processed = {}
     for platform, versions_info in data.items():
         processed[platform] = {
@@ -89,7 +120,7 @@ async def get_asset(request):
     asset_info = assets_index.get(asset_id)
     if asset_info is None:
         return web.Response(status=404)
-    asset_abs_path = os.path.join(settings.ASSETS_REPO_PATH, asset_info['path'])
+    asset_abs_path = os.path.join(ASSETS_REPO_PATH, asset_info['path'])
     resp = web.Response(body=open(asset_abs_path, 'rb').read(), headers={'X-ASSET-VERSION': asset_info['version']})
     mime_type = mimetypes.guess_type(asset_abs_path)
     if mime_type:
@@ -107,23 +138,24 @@ async def get_version_status_v1(request):
         version = semver.VersionInfo.parse(version)
     except ValueError as e:
         return web.Response(body=str(e), status=400)
-    platform = request.match_info['platform']
+    platform = request.match_info['platform'].lower()
 
-    versions_info = request.app['versions']
-    if platform not in versions_info:
-        return web.Response(status=404)
-    if version < versions_info[platform]['minimal_actual_version']:
-        status = {
-            'status': STATUS_UPDATE_REQUIRED,
-        }
-    elif version in versions_info[platform]['force_update']:
-        status = {
-            'status': STATUS_UPDATE_REQUIRED,
-        }
-    else:
-        status = {
-            'status': STATUS_UP_TO_DATE,
-        }
+    async with lock:
+        versions_info = request.app['versions']
+        if platform not in versions_info:
+            return web.Response(status=404)
+        if version < versions_info[platform]['minimal_actual_version']:
+            status = {
+                'status': STATUS_UPDATE_REQUIRED,
+            }
+        elif version in versions_info[platform]['force_update']:
+            status = {
+                'status': STATUS_UPDATE_REQUIRED,
+            }
+        else:
+            status = {
+                'status': STATUS_UP_TO_DATE,
+            }
     return web.json_response(status)
 
 
@@ -148,9 +180,9 @@ async def get_version_status_v2(request):
             ]
         }
 
-    platform = request.match_info['platform']
+    platform = request.match_info['platform'].lower()
 
-    if platform == 'android':
+    if platform == ANDROID:
         return 400, {
             'success': False,
             'errors': [
@@ -161,46 +193,48 @@ async def get_version_status_v2(request):
             ]
         }
 
-    versions_info = request.app['versions']
-    if platform not in versions_info:
-        return web.Response(status=404)
-    if version < versions_info[platform]['minimal_actual_version'] and \
-            version < versions_info[platform]['latest_version']:
-        status = {
-            'status': STATUS_UPDATE_REQUIRED,
-            'update_available': True
-        }
-    elif version < versions_info[platform]['minimal_actual_version'] and \
-            version >= versions_info[platform]['latest_version']:
-        status = {
-            'status': STATUS_UPDATE_REQUIRED,
-            'update_available': False
-        }
-    elif version > versions_info[platform]['latest_version']:
-        status = {
-            'status': STATUS_UP_TO_DATE,
-            'update_available': False
-        }
-    elif version in versions_info[platform]['force_update']:
-        status = {
-            'status': STATUS_UPDATE_REQUIRED,
-            'update_available': True
-        }
-    elif version in versions_info[platform]['force_off']:
-        status = {
-            'status': STATUS_UPDATE_REQUIRED,
-            'update_available': False
-        }
-    elif version < versions_info[platform]['latest_version']:
-        status = {
-            'status': STATUS_UP_TO_DATE,
-            'update_available': True
-        }
-    else:
-        status = {
-            'status': STATUS_UP_TO_DATE,
-            'update_available': False
-        }
+    async with lock:
+        versions_info = request.app['versions']
+        if platform not in versions_info:
+            return web.Response(status=404)
+        if version < versions_info[platform]['minimal_actual_version'] and \
+                version < versions_info[platform]['latest_version']:
+            status = {
+                'status': STATUS_UPDATE_REQUIRED,
+                'update_available': True
+            }
+        elif version < versions_info[platform]['minimal_actual_version'] and \
+                version >= versions_info[platform]['latest_version']:
+            status = {
+                'status': STATUS_UPDATE_REQUIRED,
+                'update_available': False
+            }
+        elif version > versions_info[platform]['latest_version']:
+            status = {
+                'status': STATUS_UP_TO_DATE,
+                'update_available': False
+            }
+        elif version in versions_info[platform]['force_update']:
+            status = {
+                'status': STATUS_UPDATE_REQUIRED,
+                'update_available': True
+            }
+        elif version in versions_info[platform]['force_off']:
+            status = {
+                'status': STATUS_UPDATE_REQUIRED,
+                'update_available': False
+            }
+        elif version < versions_info[platform]['latest_version']:
+            status = {
+                'status': STATUS_UP_TO_DATE,
+                'update_available': True
+            }
+        else:
+            status = {
+                'status': STATUS_UP_TO_DATE,
+                'update_available': False
+            }
+
     return 200, status
 
 
@@ -220,11 +254,123 @@ async def check_assests_updates(request):
     return web.json_response(result)
 
 
+@routes.get('/v1/{platform}/config')
+@json_response
+async def config(request):
+    platform = request.match_info['platform'].lower()
+    if platform not in PLATFORMS:
+        return 400, {
+            'success': False,
+            'errors': [
+                {
+                    'code': 'ValidationError',
+                    'message': 'Invalid platform'
+                }
+            ]
+        }
+
+    async with lock:
+        versions_info = request.app['versions']
+
+        if platform not in versions_info:
+            return 404, {
+                'success': False,
+                'errors': [
+                    {
+                        'code': 'NotFound',
+                        'message': 'Config not found'
+                    }
+                ]
+            }
+
+        return 200, {
+            'success': True,
+            'data': versions_info[platform]
+        }
+
+
+@routes.post('/v1/{platform}/config')
+@json_response
+async def config(request):
+    platform = request.match_info['platform'].lower()
+    if platform not in PLATFORMS:
+        return 400, {
+            'success': False,
+            'errors': [
+                {
+                    'code': 'ValidationError',
+                    'message': 'Invalid platform'
+                }
+            ]
+        }
+
+    try:
+        data = await request.json()
+    except JSONDecodeError:
+        return 400, {
+            'success': False,
+            'errors': [
+                {
+                    'code': 'ValidationError',
+                    'message': 'Invalid json'
+                }
+            ]
+        }
+
+    try:
+        if platform == IOS:
+            schema = IOSConfigSchema(strict=True)
+        elif platform == ANDROID:
+            schema = AndroidConfigSchema(strict=True)
+
+        data = schema.load(data)[0]
+    except ValidationError as e:
+        return 400, {
+            'success': False,
+            'errors': [
+                dict(code='ValidationError',
+                     field=field,
+                     message=''.join(e.messages[field])) for field in e.messages
+            ]
+        }
+
+    curr_config = json.load(open(ACTUAL_VERSIONS_FILE, 'rb'))
+
+    try:
+        with open(ACTUAL_VERSIONS_FILE, 'w') as f:
+            curr_config[platform] = data
+            json.dump(curr_config, f)
+        f.close()
+        async with lock:
+            request.app['versions'] = load_versions_info()
+    except IOError:
+        return 400, {
+            'success': False,
+            'errors': [
+                dict(code='IOError',
+                     field='non_field_error',
+                     message='cannot save config file')
+            ]
+        }
+
+    return 200, {'success': True}
+
+
 async def make_app():
     """
     Create and initialize the application instance.
     """
-    app = web.Application()
+    app = web.Application(
+        middlewares=[
+            TokenAuthMiddleware(
+                CONFIG_SECRET,
+                [
+                    {'method': 'POST', 'path': r'/v1/.*?/config*'},
+                    {'method': 'GET', 'path': r'/v1/.*?/config*'},
+                ]
+            )
+        ]
+    )
     app['versions'] = load_versions_info()
     app['assets_index'] = make_assets_index()
     app.add_routes(routes)
