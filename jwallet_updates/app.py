@@ -78,6 +78,15 @@ def load_versions_info():
     return processed
 
 
+def normalize_version(version):
+    version = version.split('.')
+
+    if len(version) < 3:
+        raise Exception('Bad version value')
+
+    return '.'.join(version[:3])
+
+
 routes = web.RouteTableDef()
 # routes.static('/v1/assets/', settings.ASSETS_REPO_PATH)
 
@@ -103,15 +112,27 @@ async def get_version_status_v1(request):
     Checks moblie app version status: up to date, update available or update required
     """
     version = request.match_info['version']
-    try:
-        version = semver.VersionInfo.parse(version)
-    except ValueError as e:
-        return web.Response(body=str(e), status=400)
     platform = request.match_info['platform']
-
     versions_info = request.app['versions']
+
     if platform not in versions_info:
         return web.Response(status=404)
+
+    try:
+        version = normalize_version(version)
+        version = semver.VersionInfo.parse(version)
+    except (ValueError, Exception) as e:
+        return web.json_response(
+            data={
+                'errors': [
+                    {
+                        'code': 'ValidationError',
+                        'message': str(e),
+                    }
+                ]
+            },
+            status=400)
+
     if version < versions_info[platform]['minimal_actual_version']:
         status = {
             'status': STATUS_UPDATE_REQUIRED,
