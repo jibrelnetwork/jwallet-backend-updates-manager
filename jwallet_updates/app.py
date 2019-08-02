@@ -197,6 +197,11 @@ async def get_version_status_v2(request):
             'status': STATUS_UPDATE_REQUIRED,
             'update_available': False
         }
+    elif version > versions_info[platform]['latest_version']:
+        status = {
+            'status': STATUS_UP_TO_DATE,
+            'update_available': False
+        }
     elif version in versions_info[platform]['force_update']:
         status = {
             'status': STATUS_UPDATE_REQUIRED,

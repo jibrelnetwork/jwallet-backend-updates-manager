@@ -1,4 +1,8 @@
-FROM python:3.7-alpine
+# TODO: revert to latest image when issue will be fixed
+# see: https://github.com/pypa/pip/issues/6197
+# FROM python:3.7-alpine
+FROM python@sha256:abc2a66d8ce0ddf14b1d51d4c1fe83f21059fa1c4952c02116cb9fd8d5cfd5c4
+
 
 RUN addgroup -S -g 1000 app \
  && adduser -S -u 1000 -G app -s /bin/sh -D app \

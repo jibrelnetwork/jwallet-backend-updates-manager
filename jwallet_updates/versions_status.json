@@ -1,12 +1,12 @@
 {
-    "ios": {
-        "minimal_actual_version": "0.0.1",
-        "force_update": ["0.0.2", "0.0.4"],
-        "latest_version": "0.2.0",
-        "force_off": ["0.0.3"]
+    "ios": {    
+        "minimal_actual_version": "0.1.0",
+        "force_update": [],
+        "latest_version": "0.2.1",
+        "force_off": []
     },
     "android": {
-        "minimal_actual_version": "0.2.0",
-        "force_update": ["0.1.0"]
+        "minimal_actual_version": "1.0.0",
+        "force_update": []
     }
 }
