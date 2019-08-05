@@ -237,5 +237,5 @@ Content-Type: application/json
 
 ## Versions management
 
-1. Update `jibrelnetwork/jwallet-backend-updates-manager:actual_versions.json` file - it should contain actual versions (no update required) of mobile apps for each platform
+1. Update `jibrelnetwork/jwallet-backend-updates-manager:versions_status.json` file - it should contain actual versions (no update required) of mobile apps for each platform
 2. commit and push
