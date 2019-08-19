@@ -7,6 +7,6 @@
     },
     "android": {
         "minimal_actual_version": "1.0.0",
-        "force_update": []
+        "force_update": ["1.6.9"]
     }
 }
