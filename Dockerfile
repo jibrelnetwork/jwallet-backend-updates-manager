@@ -3,15 +3,21 @@ FROM python:3.7-alpine
 RUN addgroup -S -g 1000 app \
  && adduser -S -u 1000 -G app -s /bin/sh -D app \
  && mkdir /app \
- && chown -R app:app /app \
- && apk add --no-cache \
-        git \
- && rm -rf /var/cache/apk/*
+ && chown -R app:app /app
+
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
- && pip install --no-cache-dir gunicorn
+
+RUN set -x \
+ && apk add --no-cache --virtual .build-deps \
+        build-base \
+        gcc \
+        git \
+ && pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir gunicorn \
+ && apk del --no-cache .build-deps \
+ && rm -rf /var/cache/apk/*
 
 COPY . .
 RUN pip install --no-cache-dir --editable .
